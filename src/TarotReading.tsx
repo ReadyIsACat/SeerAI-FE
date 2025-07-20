@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { FC } from 'react';
 import { TAROT_DECK } from './data/tarotDeck';
 import type { TarotCard } from './data/tarotDeck';
@@ -179,46 +179,84 @@ const CARD_IMAGES: Record<string, string> = {
   'King of Coins': kingOfCoins,
 };
 
-// Mock API interface
+// API Configuration
+const API_BASE_URL = 'http://localhost:3000';
+// Alternative: Use CORS proxy for testing
+// const API_BASE_URL = 'https://cors-anywhere.herokuapp.com/http://localhost:3000';
+const API_ENDPOINTS = {
+  health: '/api/tarot/health',
+  reading: '/api/tarot/reading'
+} as const;
+
+// API Interfaces
+interface APITarotCard {
+  id: number;
+  name: string;
+  suit?: string;
+  arcana: 'major' | 'minor';
+  description: string;
+}
+
 interface TarotReadingRequest {
   question: string;
-  selectedCards: {
-    id: number;
-    name: string;
-    suit?: string;
-    arcana: 'major' | 'minor';
-    description: string;
-  }[];
+  selectedCards: APITarotCard[];
 }
 
 interface TarotReadingResponse {
   reading: string;
   interpretation: string;
   advice: string;
-  cards: {
-    name: string;
-    position: 'past' | 'present' | 'future';
-    meaning: string;
-  }[];
+  cards: TarotCardReading[];
 }
 
-// Mock API call
-const mockTarotReadingAPI = async (request: TarotReadingRequest): Promise<TarotReadingResponse> => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  const cardNames = request.selectedCards.map(card => card.name).join(', ');
-  
-  return {
-    reading: `Based on your question about "${request.question}", the cards reveal a fascinating journey.`,
-    interpretation: `The combination of ${cardNames} suggests a powerful message about your current situation. The cards indicate both challenges and opportunities ahead.`,
-    advice: `Trust your intuition and remain open to the guidance these cards provide. The universe is aligning in your favor.`,
-    cards: request.selectedCards.map((card, index) => ({
-      name: card.name,
-      position: index === 0 ? 'past' : index === 1 ? 'present' : 'future' as const,
-      meaning: `This card represents ${index === 0 ? 'what has led you here' : index === 1 ? 'your current situation' : 'what lies ahead'}. ${card.description}`
-    }))
-  };
+interface TarotCardReading {
+  name: string;
+  position: 'past' | 'present' | 'future';
+  meaning: string;
+}
+
+// API Functions
+const checkAPIHealth = async (): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.health}`);
+    if (response.ok) {
+      const healthData = await response.json();
+      console.log('Backend health check response:', healthData);
+    }
+    return response.ok;
+  } catch (error) {
+    console.error('Health check failed:', error);
+    return false;
+  }
+};
+
+const getTarotReading = async (request: TarotReadingRequest): Promise<TarotReadingResponse> => {
+  try {
+    // Debug: Log the request being sent
+    console.log('Sending request to backend:', JSON.stringify(request, null, 2));
+    
+    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.reading}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      mode: 'cors',
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+      throw new Error('CORS Error: Backend server is not allowing requests from this origin. Please check your backend CORS configuration.');
+    }
+    throw error;
+  }
 };
 
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -236,7 +274,18 @@ export const TarotReading: FC = () => {
   const [deck, setDeck] = useState(() => shuffleArray(TAROT_DECK));
   const [question, setQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [readingResult, setReadingResult] = useState<TarotReadingResponse | null>(null); 
+  const [readingResult, setReadingResult] = useState<TarotReadingResponse | null>(null);
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [error, setError] = useState<string | null>(null); 
+
+  // Check API health on component mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      const isHealthy = await checkAPIHealth();
+      setApiStatus(isHealthy ? 'online' : 'offline');
+    };
+    checkHealth();
+  }, []);
 
   const handleReset = () => {
     setSelected([]);
@@ -244,6 +293,7 @@ export const TarotReading: FC = () => {
     setDeck(shuffleArray(TAROT_DECK));
     setQuestion('');
     setReadingResult(null);
+    setError(null);
   };
 
   const handleSelect = (id: number) => {
@@ -256,17 +306,28 @@ export const TarotReading: FC = () => {
   const handleReveal = async () => {
     if (selected.length === 3 && question.trim()) {
       setIsLoading(true);
+      setError(null);
       try {
+        // Clean the card data to match backend expectations
+        const cleanedCards: APITarotCard[] = selectedCards.map(card => ({
+          id: card.id,
+          name: card.name,
+          suit: card.suit,
+          arcana: card.arcana,
+          description: card.description
+        }));
+        
         const request: TarotReadingRequest = {
           question: question.trim(),
-          selectedCards: selectedCards
+          selectedCards: cleanedCards
         };
         
-        const result = await mockTarotReadingAPI(request);
+        const result = await getTarotReading(request);
         setReadingResult(result);
         setShowResult(true);
       } catch (error) {
         console.error('Error getting reading:', error);
+        setError(error instanceof Error ? error.message : 'Failed to get reading');
       } finally {
         setIsLoading(false);
       }
@@ -288,6 +349,19 @@ export const TarotReading: FC = () => {
       }}
     >
       <h1 style={{ color: '#fff', marginBottom: 8 }}>🔮 Tarot Reading</h1>
+      
+      {/* API Status Indicator */}
+      <div style={{ marginBottom: 16 }}>
+        <span style={{ 
+          color: apiStatus === 'online' ? '#2ecc71' : apiStatus === 'offline' ? '#e74c3c' : '#f39c12',
+          fontSize: 14,
+          fontWeight: 'bold'
+        }}>
+          {apiStatus === 'checking' ? '🔄 Checking API...' : 
+           apiStatus === 'online' ? '✅ API Connected' : '❌ API Offline'}
+        </span>
+      </div>
+      
       <p style={{ color: '#fff', marginBottom: 16 }}>
         Share your question or concern, then select 3 cards for your reading:
       </p>
@@ -393,20 +467,35 @@ export const TarotReading: FC = () => {
         })}
       </div>
 
+      {/* Error Display */}
+      {error && (
+        <div style={{ 
+          margin: '16px auto', 
+          maxWidth: 600, 
+          padding: 16, 
+          background: 'rgba(231, 76, 60, 0.1)', 
+          border: '2px solid #e74c3c', 
+          borderRadius: 8,
+          color: '#e74c3c'
+        }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
       <div style={{ margin: '24px 0' }}>
         <button
           onClick={handleReveal}
-          disabled={selected.length !== 3 || showResult || !question.trim() || isLoading}
+          disabled={selected.length !== 3 || showResult || !question.trim() || isLoading || apiStatus !== 'online'}
           style={{
             padding: '12px 32px',
             fontSize: 16,
             borderRadius: 25,
             border: 'none',
             background:
-              selected.length === 3 && !showResult && question.trim() && !isLoading ? '#f39c12' : '#95a5a6',
+              selected.length === 3 && !showResult && question.trim() && !isLoading && apiStatus === 'online' ? '#f39c12' : '#95a5a6',
             color: '#fff',
             cursor:
-              selected.length === 3 && !showResult && question.trim() && !isLoading ? 'pointer' : 'not-allowed',
+              selected.length === 3 && !showResult && question.trim() && !isLoading && apiStatus === 'online' ? 'pointer' : 'not-allowed',
             marginRight: 12,
             fontWeight: 'bold',
             transition: 'all 0.3s ease',
