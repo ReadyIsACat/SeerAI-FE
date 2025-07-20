@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { FC } from 'react';
 import { TAROT_DECK } from './data/tarotDeck';
 import type { TarotCard } from './data/tarotDeck';
+import { GradientButton } from './components/GradientButton';
 import cardBack from './assets/tarot-cards/card-back.png';
 
 // Import Major Arcana card images
@@ -277,6 +278,50 @@ export const TarotReading: FC = () => {
   const [readingResult, setReadingResult] = useState<TarotReadingResponse | null>(null);
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [error, setError] = useState<string | null>(null); 
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
+  const [showScrollHint, setShowScrollHint] = useState(true);
+  const deckRef = useRef<HTMLDivElement>(null);
+
+  // Detect if carousel is scrollable
+  useEffect(() => {
+    const checkScroll = () => {
+      const el = deckRef.current;
+      if (!el) return;
+      setShowLeftArrow(el.scrollLeft > 0);
+      setShowRightArrow(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+    checkScroll();
+    const el = deckRef.current;
+    if (el) {
+      el.addEventListener('scroll', checkScroll);
+      window.addEventListener('resize', checkScroll);
+    }
+    return () => {
+      if (el) el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [deck]);
+
+  // Hide scroll hint after user scrolls or after 4s
+  useEffect(() => {
+    const el = deckRef.current;
+    if (!el) return;
+    const hideHint = () => setShowScrollHint(false);
+    el.addEventListener('scroll', hideHint);
+    const timer = setTimeout(hideHint, 4000);
+    return () => {
+      el.removeEventListener('scroll', hideHint);
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const scrollDeck = (dir: 'left' | 'right') => {
+    const el = deckRef.current;
+    if (!el) return;
+    const scrollAmount = 200;
+    el.scrollBy({ left: dir === 'left' ? -scrollAmount : scrollAmount, behavior: 'smooth' });
+  };
 
   // Check API health on component mount
   useEffect(() => {
@@ -367,7 +412,15 @@ export const TarotReading: FC = () => {
       </p>
       
       <div style={{ marginBottom: 32, maxWidth: 600, marginLeft: 'auto', marginRight: 'auto' }}>
+        <style>{`
+          /* Custom placeholder color for the question textarea */
+          textarea.tarot-question::placeholder {
+            color: #b3b8e0;
+            opacity: 1;
+          }
+        `}</style>
         <textarea
+          className="tarot-question"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="What would you like to know? Share your question, concern, or what's on your mind..."
@@ -376,7 +429,7 @@ export const TarotReading: FC = () => {
             minHeight: 100,
             padding: 16,
             borderRadius: 12,
-            border: '2px solid rgba(255,255,255,0.3)',
+            border: '2px solid rgba(255, 245, 245, 0.3)',
             background: 'rgba(255,255,255,0.1)',
             color: '#fff',
             fontSize: 16,
@@ -390,13 +443,96 @@ export const TarotReading: FC = () => {
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          overflowX: 'auto',
-          padding: '20px',
-        }}
-      >
+      <div style={{ position: 'relative', marginBottom: 24 }}>
+        {/* Left Arrow */}
+        {showLeftArrow && (
+          <button
+            aria-label="Scroll left"
+            onClick={() => scrollDeck('left')}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 20,
+              background: 'rgba(0,0,0,0.3)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 36,
+              height: 36,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: 22,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            }}
+          >
+            {/* Unicode left arrow */}
+            
+          </button>
+        )}
+        {/* Right Arrow */}
+        {showRightArrow && (
+          <button
+            aria-label="Scroll right"
+            onClick={() => scrollDeck('right')}
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 20,
+              background: 'rgba(0,0,0,0.3)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 36,
+              height: 36,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: 22,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            }}
+          >
+            {/* Unicode right arrow */}
+            
+          </button>
+        )}
+        {/* Scroll Hint */}
+        {showScrollHint && showRightArrow && (
+          <div style={{
+            position: 'absolute',
+            right: 48,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(0,0,0,0.15)',
+            color: '#fff',
+            padding: '6px 16px',
+            borderRadius: 16,
+            fontSize: 14,
+            zIndex: 10,
+            pointerEvents: 'none',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            animation: 'fadeInOut 4s linear',
+          }}>
+            ← Scroll to see more cards →
+          </div>
+        )}
+        <div
+          ref={deckRef}
+          style={{
+            display: 'flex',
+            overflowX: 'auto',
+            padding: '20px',
+            scrollBehavior: 'smooth',
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgb(255, 255, 255) #eee',
+          }}
+        >
         {deck.map((card, index) => {
           const isSelected = selected.includes(card.id);
           const revealed = isSelected || showResult;
@@ -413,10 +549,10 @@ export const TarotReading: FC = () => {
                 borderRadius: 8,
                 overflow: 'hidden',
                 border: isSelected
-                  ? '3px solid #f39c12'
+                  ? '3px solid #ffee9c'
                   : '2px solid rgba(255,255,255,0.3)',
                 boxShadow: isSelected
-                  ? '0 0 20px #f39c12'
+                  ? '0 0 20px #ffee9c'
                   : '0 4px 12px rgba(0,0,0,0.3)',
                 cursor: revealed ? 'default' : 'pointer',
                 transition: 'all 0.3s ease',
@@ -465,6 +601,7 @@ export const TarotReading: FC = () => {
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* Error Display */}
@@ -483,42 +620,20 @@ export const TarotReading: FC = () => {
       )}
 
       <div style={{ margin: '24px 0' }}>
-        <button
+        <GradientButton
           onClick={handleReveal}
           disabled={selected.length !== 3 || showResult || !question.trim() || isLoading || apiStatus !== 'online'}
-          style={{
-            padding: '12px 32px',
-            fontSize: 16,
-            borderRadius: 25,
-            border: 'none',
-            background:
-              selected.length === 3 && !showResult && question.trim() && !isLoading && apiStatus === 'online' ? '#f39c12' : '#95a5a6',
-            color: '#fff',
-            cursor:
-              selected.length === 3 && !showResult && question.trim() && !isLoading && apiStatus === 'online' ? 'pointer' : 'not-allowed',
-            marginRight: 12,
-            fontWeight: 'bold',
-            transition: 'all 0.3s ease',
-          }}
+          variant="primary"
+          style={{ marginRight: 12 }}
         >
           {isLoading ? '🔮 Reading Cards...' : '🔮 Reveal Reading'}
-        </button>
-        <button
+        </GradientButton>
+        <GradientButton
           onClick={handleReset}
-          style={{
-            padding: '12px 32px',
-            fontSize: 16,
-            borderRadius: 25,
-            border: 'none',
-            background: '#e74c3c',
-            color: '#fff',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            transition: 'all 0.3s ease',
-          }}
+          variant="secondary"
         >
           🔄 Reset
-        </button>
+        </GradientButton>
       </div>
 
       {showResult && readingResult && (
