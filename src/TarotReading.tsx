@@ -179,8 +179,47 @@ const CARD_IMAGES: Record<string, string> = {
   'King of Coins': kingOfCoins,
 };
 
-const MOCK_ANALYSIS = (cards: TarotCard[]): string =>
-  `You drew: ${cards.map((c) => c.name).join(', ')}. This is a mock reading. In the real app, the backend will analyze your cards!`;
+// Mock API interface
+interface TarotReadingRequest {
+  question: string;
+  selectedCards: {
+    id: number;
+    name: string;
+    suit?: string;
+    arcana: 'major' | 'minor';
+    description: string;
+  }[];
+}
+
+interface TarotReadingResponse {
+  reading: string;
+  interpretation: string;
+  advice: string;
+  cards: {
+    name: string;
+    position: 'past' | 'present' | 'future';
+    meaning: string;
+  }[];
+}
+
+// Mock API call
+const mockTarotReadingAPI = async (request: TarotReadingRequest): Promise<TarotReadingResponse> => {
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  const cardNames = request.selectedCards.map(card => card.name).join(', ');
+  
+  return {
+    reading: `Based on your question about "${request.question}", the cards reveal a fascinating journey.`,
+    interpretation: `The combination of ${cardNames} suggests a powerful message about your current situation. The cards indicate both challenges and opportunities ahead.`,
+    advice: `Trust your intuition and remain open to the guidance these cards provide. The universe is aligning in your favor.`,
+    cards: request.selectedCards.map((card, index) => ({
+      name: card.name,
+      position: index === 0 ? 'past' : index === 1 ? 'present' : 'future' as const,
+      meaning: `This card represents ${index === 0 ? 'what has led you here' : index === 1 ? 'your current situation' : 'what lies ahead'}. ${card.description}`
+    }))
+  };
+};
 
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
@@ -194,12 +233,17 @@ const shuffleArray = <T,>(array: T[]): T[] => {
 export const TarotReading: FC = () => {
   const [selected, setSelected] = useState<number[]>([]);
   const [showResult, setShowResult] = useState(false);
-  const [deck, setDeck] = useState(() => shuffleArray(TAROT_DECK)); 
+  const [deck, setDeck] = useState(() => shuffleArray(TAROT_DECK));
+  const [question, setQuestion] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [readingResult, setReadingResult] = useState<TarotReadingResponse | null>(null); 
 
   const handleReset = () => {
     setSelected([]);
     setShowResult(false);
     setDeck(shuffleArray(TAROT_DECK));
+    setQuestion('');
+    setReadingResult(null);
   };
 
   const handleSelect = (id: number) => {
@@ -209,8 +253,24 @@ export const TarotReading: FC = () => {
     }
   };
 
-  const handleReveal = () => {
-    if (selected.length === 3) setShowResult(true);
+  const handleReveal = async () => {
+    if (selected.length === 3 && question.trim()) {
+      setIsLoading(true);
+      try {
+        const request: TarotReadingRequest = {
+          question: question.trim(),
+          selectedCards: selectedCards
+        };
+        
+        const result = await mockTarotReadingAPI(request);
+        setReadingResult(result);
+        setShowResult(true);
+      } catch (error) {
+        console.error('Error getting reading:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
   const selectedCards = selected
@@ -228,9 +288,33 @@ export const TarotReading: FC = () => {
       }}
     >
       <h1 style={{ color: '#fff', marginBottom: 8 }}>🔮 Tarot Reading</h1>
-      <p style={{ color: '#fff', marginBottom: 32 }}>
-        Select 3 cards from the deck below:
+      <p style={{ color: '#fff', marginBottom: 16 }}>
+        Share your question or concern, then select 3 cards for your reading:
       </p>
+      
+      <div style={{ marginBottom: 32, maxWidth: 600, marginLeft: 'auto', marginRight: 'auto' }}>
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="What would you like to know? Share your question, concern, or what's on your mind..."
+          style={{
+            width: '100%',
+            minHeight: 100,
+            padding: 16,
+            borderRadius: 12,
+            border: '2px solid rgba(255,255,255,0.3)',
+            background: 'rgba(255,255,255,0.1)',
+            color: '#fff',
+            fontSize: 16,
+            fontFamily: 'inherit',
+            resize: 'vertical',
+            backdropFilter: 'blur(10px)',
+          }}
+        />
+        <div style={{ marginTop: 8, fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
+          {question.length}/500 characters
+        </div>
+      </div>
 
       <div
         style={{
@@ -312,23 +396,23 @@ export const TarotReading: FC = () => {
       <div style={{ margin: '24px 0' }}>
         <button
           onClick={handleReveal}
-          disabled={selected.length !== 3 || showResult}
+          disabled={selected.length !== 3 || showResult || !question.trim() || isLoading}
           style={{
             padding: '12px 32px',
             fontSize: 16,
             borderRadius: 25,
             border: 'none',
             background:
-              selected.length === 3 && !showResult ? '#f39c12' : '#95a5a6',
+              selected.length === 3 && !showResult && question.trim() && !isLoading ? '#f39c12' : '#95a5a6',
             color: '#fff',
             cursor:
-              selected.length === 3 && !showResult ? 'pointer' : 'not-allowed',
+              selected.length === 3 && !showResult && question.trim() && !isLoading ? 'pointer' : 'not-allowed',
             marginRight: 12,
             fontWeight: 'bold',
             transition: 'all 0.3s ease',
           }}
         >
-          🔮 Reveal Reading
+          {isLoading ? '🔮 Reading Cards...' : '🔮 Reveal Reading'}
         </button>
         <button
           onClick={handleReset}
@@ -348,55 +432,77 @@ export const TarotReading: FC = () => {
         </button>
       </div>
 
-      {showResult && (
+      {showResult && readingResult && (
         <div
           style={{
             marginTop: 32,
             padding: 32,
             background: 'rgba(255,255,255,0.95)',
             borderRadius: 16,
-            maxWidth: 600,
+            maxWidth: 800,
             marginLeft: 'auto',
             marginRight: 'auto',
             boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+            backdropFilter: 'blur(10px)',
           }}
         >
           <h2 style={{ color: '#2c3e50', marginBottom: 16 }}>✨ Your Reading</h2>
-          <p style={{ color: '#34495e', lineHeight: 1.6 }}>
-            {MOCK_ANALYSIS(selectedCards)}
-          </p>
-          <div
-            style={{
-              marginTop: 24,
-              display: 'flex',
-              justifyContent: 'center',
-              gap: 16,
-            }}
-          >
-            {selectedCards.map((card, index) => (
-              <div key={card.id} style={{ textAlign: 'center' }}>
-                <div
-                  style={{
-                    width: 60,
-                    height: 90,
-                    background: '#fff',
-                    border: '2px solid #f39c12',
-                    borderRadius: 6,
-                    marginBottom: 8,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <img
-                    src={CARD_IMAGES[card.name]}
-                    alt={card.name}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
+          
+          <div style={{ marginBottom: 24 }}>
+            <h3 style={{ color: '#34495e', marginBottom: 8 }}>Question:</h3>
+            <p style={{ color: '#7f8c8d', fontStyle: 'italic' }}>"{question}"</p>
+          </div>
+          
+          <div style={{ marginBottom: 24 }}>
+            <h3 style={{ color: '#34495e', marginBottom: 8 }}>Reading:</h3>
+            <p style={{ color: '#34495e', lineHeight: 1.6 }}>{readingResult.reading}</p>
+          </div>
+          
+          <div style={{ marginBottom: 24 }}>
+            <h3 style={{ color: '#34495e', marginBottom: 8 }}>Interpretation:</h3>
+            <p style={{ color: '#34495e', lineHeight: 1.6 }}>{readingResult.interpretation}</p>
+          </div>
+          
+          <div style={{ marginBottom: 24 }}>
+            <h3 style={{ color: '#34495e', marginBottom: 8 }}>Advice:</h3>
+            <p style={{ color: '#34495e', lineHeight: 1.6, fontWeight: 'bold' }}>{readingResult.advice}</p>
+          </div>
+          
+          <div style={{ marginTop: 32 }}>
+            <h3 style={{ color: '#34495e', marginBottom: 16, textAlign: 'center' }}>Your Cards</h3>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
+              {readingResult.cards.map((cardInfo, index) => (
+                <div key={index} style={{ textAlign: 'center', maxWidth: 200 }}>
+                  <div
+                    style={{
+                      width: 80,
+                      height: 120,
+                      background: '#fff',
+                      border: '3px solid #f39c12',
+                      borderRadius: 8,
+                      marginBottom: 12,
+                      overflow: 'hidden',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    <img
+                      src={CARD_IMAGES[cardInfo.name]}
+                      alt={cardInfo.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 'bold', color: '#f39c12', marginBottom: 4 }}>
+                    {cardInfo.position.charAt(0).toUpperCase() + cardInfo.position.slice(1)}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#2c3e50', marginBottom: 6 }}>
+                    {cardInfo.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#7f8c8d', lineHeight: 1.4 }}>
+                    {cardInfo.meaning}
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, color: '#7f8c8d' }}>
-                  {index === 0 ? 'Past' : index === 1 ? 'Present' : 'Future'}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
